@@ -20,7 +20,7 @@ missmap(train, main = "Missing Values Map")
 data <- subset(train, select = c(2,3,5,6,7,8,10,12))
 
 #Taking care of Missing Values
-#data$Age[is.na(data$Age)] <- mean(data$Age, na.rm = T)
+data$Age[is.na(data$Age)] <- mean(data$Age, na.rm = T)
 #age_m <- rpart(Age ~. , data = data[!is.na(data$Age), ], method = "anova")
 #age_p <- predict(age_m, data[is.na(data$Age), ])
 #data$Age[is.na(data$Age)] <- predict(age_m, data[is.na(data$Age), ])
