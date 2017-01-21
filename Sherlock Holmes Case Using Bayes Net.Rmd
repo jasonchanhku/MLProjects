@@ -1,0 +1,115 @@
+---
+title: "Sherlock Holmes Case Using Bayes Net"
+author: "Jason Chan"
+date: "January 21, 2017"
+output: 
+  html_document:
+    toc: TRUE
+---
+
+#Libraries Used
+```{r, message=FALSE, error=FALSE, warning=FALSE}
+library(gRain)
+library(gRbase)
+library(ggm)
+library(Rgraphviz)
+```
+  
+<br />
+
+#The Case
+**Sherlock Holmes was asked to solve the following problem:**
+
+A man was murdered last night an the Police has three suspects. A knife was found close to the body and the expert examination tests showed that it had the fingerprints of suspect 3. 
+
+A neighbor saw a man running out of the house in which the murder occurred and the man had the same height of suspect 1 being much smaller than suspects 2 and 3.
+
+**Which suspect is the murderer with highest probability** ?
+  
+<br />
+
+#Step 1: Visualization Plot
+```{r, echo=FALSE}
+g <- list(~criminal, ~scene | criminal , ~knife | criminal , ~expert | knife, ~height | scene)
+
+crimedag <- dagList(g)
+
+plot(crimedag)
+```
+
+Where:
+
+* Criminal - The criminal responsible for the murder
+* Knife - The last person who handled the knife
+* Scene - Person who left the scene 
+* Height - The person's height matching that of the suspects
+* Expert - Expert's examination of which suspect's fingerprint found
+  
+<br />
+
+#Step 2: Assigning the probabilities
+
+Assuming that we consulted a Crime Scene Investigator for this domain knowledge and this were his proposed probabilities:
+
+```{r, echo=TRUE}
+#Specify the levels
+suspect <- c("one", "two", "three")
+
+#Construct Conditional Probability Table (CPT)
+c <- cptable(~criminal, values = c(1/3, 1/3, 1/3), levels = suspect)
+
+s.c <- cptable(~scene | criminal, values = c(0.8, 0.1, 0.1, 0.1, 0.8, 0.1, 0.1, 0.1, 0.8), levels = suspect)
+
+h.s <- cptable(~height | scene, values = c(0.6, 0.3, 0.1, 0.1, 0.6, 0.3, 0.1, 0.4, 0.5), levels = suspect)
+
+k.c <- cptable(~knife | criminal, values = c(0.9, 0.05, 0.05, 0.05, 0.9, 0.05, 0.05, 0.05, 0.9), levels = suspect)
+
+e.k <- cptable(~expert | knife, values = c(0.8, 0.1, 0.1, 0.1, 0.8, 0.1, 0.1, 0.1, 0.8), levels = suspect)
+
+#Compile the Network
+plist <- compileCPT(list(c, s.c, h.s, k.c, e.k))
+grn1 <- grain(plist)
+plot(grn1)
+
+
+```
+  
+<br />
+
+#Step 3: Set Evidence and Run Query
+
+Note that from the case briefing above, we can find the evidence from these two extracts:
+
+* A knife was found close to the body and the tests showed that it had the fingerprints of **suspect 3**
+* the man had the same height of **suspect 1**
+
+This simple implies setting the evidence of `height = "one"` and `expert = "three"` and running the query.
+
+```{r}
+find1 <- setFinding(grn1, nodes = c("height", "expert"), states = c("one", "three"))
+
+querygrain(find1, nodes = c("criminal"), type = "marginal")
+```
+
+From the probability above, it seems like we have found our most likely murderer, which is **suspect 3** ! Case solved ! Note that without any evidence, probability of each suspect is a murderer stays at 1/3.
+  
+<br />
+
+#Other Queries Example
+
+##Example 1
+With the evidence as above, what is the probability of that the suspects were at the scene and held the knife ?
+
+```{r}
+querygrain(find1, nodes = c("scene", "knife"), type = "joint")
+```
+
+Focusing on the diagonal probabilities, it seems like suspect 1 and 3 were almost equal of likelihood to have held the knife and at the scene.
+
+##Example 2
+With the evidence as above, what is the probability of the suspects being the criminal given that they were at the scene ?
+```{r}
+querygrain(grn1, nodes = c("criminal", "scene"), type = "conditional")
+```
+
+Basically gets back the values of our Conditional Probability Tables. This is a good way to check entered values.
