@@ -1,0 +1,184 @@
+---
+title: "Principal Component Analysis (PCA)"
+author: "Jason Chan"
+date: "January 14, 2017"
+output: 
+  html_document:
+    toc: TRUE
+---
+# Libraries Used
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+library(DT) #Data Table HTML output
+library(dummies) #one-hot encoding
+library(rpart) #recursive partitioning
+library(rpart.plot)
+```
+
+# PCA Important Points
+
+* Only numerical variables, categorical variables need to be converted
+* Data needs to be normalized (Z-Score)
+
+  
+<br />
+
+# Data Exploration
+Data is from Analytics Vidya's **Big Mart Sales Prediction Challenge**. Objective of the project is to apply PCA in predictive modelling and predict the **Item_Outlet_Sales**.
+
+## Data Loading
+```{r}
+train <- read.csv(file = "bigmarttrain.csv")
+test <- read.csv(file = "bigmarttest.csv")
+
+
+
+test$Item_Outlet_Sales <- 1
+
+combi <- rbind(train, test)
+
+```
+
+## Data Preview
+```{r, echo=FALSE}
+datatable(head(combi, 300))
+```
+  
+<br />
+
+
+#Data Preprocessing
+
+## Handling Missing Values
+
+From the data preview, it seems that columns **Item_Weight, Item_Visibility, and Outlet_Size** have missing values that needs to be **imputed**. 
+
+```{r}
+#Item_Weight imputed with median
+combi$Item_Weight[is.na(combi$Item_Weight)] <- median(combi$Item_Weight, na.rm = T)
+
+#Item_Visibility 0 values imputed with median
+combi$Item_Visibility <- ifelse(combi$Item_Visibility == 0 , median(combi$Item_Visibility, na.rm = T), combi$Item_Visibility)
+
+#Outlet_Size missing label replaced with "others"
+levels(combi$Outlet_Size)[1] <- "Other"
+```
+
+
+## Removing Unique Identfiers and Response Variable
+
+As PCA is unsupervised, unique identifiers and the response variable must be removed.
+
+```{r}
+# remove unique identifiers and response variable
+
+my_data <- subset(combi, select = -c(Item_Outlet_Sales, Item_Identifier, Outlet_Identifier))
+```
+
+## Converting Categorical Variables to Numeric
+
+The following output describes the structure of each feature. Since PCA only works for numerical, categorical variables needs to be converted to numerical.
+
+```{r, echo=FALSE}
+str(my_data)
+```
+
+Seems like 6 of 9 variables need to be converting using **one hot encoding**. 
+
+```{r}
+#creating dummy data frame with factors for one hot encoding
+new_my_data <- dummy.data.frame(my_data, names = c("Item_Fat_Content","Item_Type",
+                                "Outlet_Establishment_Year","Outlet_Size",
+                                "Outlet_Location_Type","Outlet_Type"))
+
+```
+
+Check the new dataset after one hot encoding:
+```{r, echo=FALSE}
+str(new_my_data)
+```
+
+The dataset is now ready for PCA
+  
+<br />
+
+#Implementing PCA
+
+##Divide and Scaling
+```{r}
+#Dividing data
+pca.train <- new_my_data[1:nrow(train), ]
+pca.test <- new_my_data[-(1:nrow(train)),]
+
+#PCA with scaling
+prin_comp <- prcomp(pca.train, scale. = T)
+```
+
+##Biplot
+
+The biplot helps to show corresponding measures of the principal components.
+
+```{r, echo=FALSE, fig.width= 30, fig.height= 30}
+
+biplot(prin_comp, scale = 0)
+
+
+```
+
+##Proportion of Variance Explained
+
+Here, the variance of the first 10 components are checked
+```{r}
+std_dev <- prin_comp$sdev
+pr_var <- std_dev^2
+
+prop_varex <- pr_var/sum(pr_var)
+prop_varex[1:20]
+
+```
+
+##Cumulative Scree Plot
+Cumulative scree plot helps to access components or factors which explains the most of variability in the data.
+
+```{r, echo=FALSE}
+plot(cumsum(prop_varex), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+```
+
+This plot shows that 30 components results in variance close to ~ 98%. Therefore, in this case, we’ll select number of components as 30 [PC1 to PC30] and proceed to the modeling stage. This completes the steps to implement PCA on train data. For modeling, we’ll use these 30 components as predictor variables and follow the normal procedures.
+  
+<br />
+
+#Predictive Modelling
+
+```{r}
+train.data <- data.frame(Item_Outlet_Sales = train$Item_Outlet_Sales, prin_comp$x)
+
+#First 30 PCAs
+train.data <- train.data[ , 1:31]
+
+#Train decision tree on outlet sales again 30 components of train data
+rpart.model <- rpart(Item_Outlet_Sales ~ . , data = train.data, method = "anova")
+
+rpart.plot(rpart.model)
+
+#Transform test into PCA by using princomp from train to pca.test. newdata looks for which variable to predict
+test.data <- predict(prin_comp, newdata = pca.test)
+
+#predicited PCA with test one hot encoded dataset
+test.data <- as.data.frame(test.data)
+
+#First 30 components
+test.data <- test.data[,1:30]
+
+#Prediction on test data. Predicts the outlet sales based on the components of the test data
+rpart.prediction <- predict(rpart.model, test.data)
+```
+
+# Final Prediction Output
+```{r, echo=FALSE}
+output <- data.frame(Item_Identifier = test$Item_Identifier, Outlet_Identifier = test$Outlet_Identifier, Item_Outlet_Sales = rpart.prediction)
+
+datatable(head(output, 300))
+```
+
